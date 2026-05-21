@@ -8,6 +8,7 @@ a = sym.Symbol('a', positive = True)
 EA = sym.Symbol('EA')
 EIVertical = sym.Symbol('EI_v')
 EIHorizontal = sym.Symbol('EI_h')
+EIWarping = sym.Symbol('EI_w')
 linearDensity = sym.Symbol('lambda')
 zCenterOfMass = sym.Symbol('z_m')
 zNeutralAxis = sym.Symbol('z_n')
@@ -16,22 +17,13 @@ verticalMassInertiaMoment = sym.Symbol('I_yy')
 horizontalMassInertiaMoment = sym.Symbol('I_zz')
 rollMassInertiaMoment = sym.Symbol('I_xx')
 
-# C11w0 = sym.Symbol('C11w0')
-# C12w0 = sym.Symbol('C12w0')
-# C13w0 = sym.Symbol('C13w0')
-# C14w0 = sym.Symbol('C14w0')
-# C11w1 = sym.Symbol('C11w1')
-# C12w1 = sym.Symbol('C12w1')
-# C13w1 = sym.Symbol('C13w1')
-# C14w1 = sym.Symbol('C14w1')
-
 x = sym.Symbol('x')
 
 printType = 'pretty'
 
 
 
-def SimplifyPrint(expression, factor = None, series = False, symbol = sym.Symbol('x'), x0 = 0, order = 10):
+def SimplifyPrint(expression, factor = None, series = False, symbol = sym.Symbol('x'), x0 = 0, order = 12):
     if printType == 'latex':
         Printer = lambda x: print(sym.latex(x))
     elif printType == 'python':
@@ -133,11 +125,18 @@ stableBasisToBoundedBasisCoefsMatrix[:, 1] = sym.simplify(boundedBasisCoefsToCon
 stableBasisToBoundedBasisCoefsMatrix[:, 2] = sym.Matrix([0, 1, 0, 0])
 stableBasisToBoundedBasisCoefsMatrix[:, 3] = sym.simplify(boundedBasisCoefsToConditionsMatrix.LDLsolve(sym.Matrix([0, 0, 0, 1])))
 
-# stableBasisToBoundedBasisCoefsMatrix: sym.Matrix = sym.zeros(4,4)
-# stableBasisToBoundedBasisCoefsMatrix[:, 0] = sym.Matrix([1, -1, 0, 0])
-# stableBasisToBoundedBasisCoefsMatrix[:, 1] = sym.Matrix([C11w0, C12w0, C13w0, C14w0])
-# stableBasisToBoundedBasisCoefsMatrix[:, 2] = sym.Matrix([0, 1, 0, 0])
-# stableBasisToBoundedBasisCoefsMatrix[:, 3] = sym.Matrix([C11w1, C12w1, C13w1, C14w1])
+torsionMomentBoundedBasis: sym.Matrix = sym.simplify(EIWarping * (a**2 / l**2 * twistingBoundedBasis.diff(x) - twistingBoundedBasis.diff(x, 3)))
+torsionMomentStableBasis: sym.Matrix = sym.simplify(torsionMomentBoundedBasis * stableBasisToBoundedBasisCoefsMatrix)
+
+twistingDoublePrimeBoundedBasis: sym.Matrix = twistingBoundedBasis.diff(x, 2)
+twistingDoublePrimeStableBasis: sym.Matrix = twistingDoublePrimeBoundedBasis * stableBasisToBoundedBasisCoefsMatrix
+
+torsionalStiffnessMatrixStableBasis: sym.Matrix = sym.zeros(4, 4)
+torsionalStiffnessMatrixStableBasis[0, :] = -torsionMomentStableBasis.subs(x, 0) + EIWarping/l * (twistingDoublePrimeStableBasis.subs(x, 0) - twistingDoublePrimeStableBasis.subs(x, l))
+torsionalStiffnessMatrixStableBasis[1, :] = -EIWarping/l * twistingDoublePrimeStableBasis.subs(x, 0)
+torsionalStiffnessMatrixStableBasis[2, :] =  torsionMomentStableBasis.subs(x, l) + EIWarping/l * (twistingDoublePrimeStableBasis.subs(x, l) - twistingDoublePrimeStableBasis.subs(x, 0))
+torsionalStiffnessMatrixStableBasis[3, :] =  EIWarping/l * twistingDoublePrimeStableBasis.subs(x, l)
+torsionalStiffnessMatrixStableBasis = sym.simplify(torsionalStiffnessMatrixStableBasis)
 
 massMatrixBoundedBasis = (rollMassInertiaMoment + linearDensity * (zCenterOfMass - zCenterOfTwist)**2) * sym.integrate(twistingBoundedBasis.transpose() * twistingBoundedBasis, (x, 0, l))
 massMatrixStableBasis = sym.simplify(stableBasisToBoundedBasisCoefsMatrix.transpose() * massMatrixBoundedBasis * stableBasisToBoundedBasisCoefsMatrix)
@@ -171,6 +170,23 @@ print()
 print('Horizontal bending stiffness matrix:')
 SimplifyPrint(horizontalStiffnessMatrix, factor = EIHorizontal / l**2 / (1 + shearCorrectionFactorHorizontal))
 print()
+print('Torsion moment in the stable basis:')
+SimplifyPrint(torsionMomentStableBasis)
+print('Torsional stiffness matrix in the stable basis:')
+SimplifyPrint(torsionalStiffnessMatrixStableBasis)
+print('Free warping submatrix:')
+freeWarpingTorsionalStiffnessMatrix: sym.Matrix = sym.zeros(2, 2)
+freeWarpingTorsionalStiffnessMatrix[0, 0] = torsionalStiffnessMatrixStableBasis[0, 0]
+freeWarpingTorsionalStiffnessMatrix[1, 0] = torsionalStiffnessMatrixStableBasis[2, 0]
+freeWarpingTorsionalStiffnessMatrix[0, 1] = torsionalStiffnessMatrixStableBasis[0, 2]
+freeWarpingTorsionalStiffnessMatrix[1, 1] = torsionalStiffnessMatrixStableBasis[2, 2]
+SimplifyPrint(freeWarpingTorsionalStiffnessMatrix, factor = EIWarping * a**2 / l**3)
+print('w0 w0:')
+SimplifyPrint(torsionalStiffnessMatrixStableBasis[1, 1], factor = EIWarping/l**3, series = True, symbol = a)
+print('w0 w1:')
+SimplifyPrint(torsionalStiffnessMatrixStableBasis[1, 3], factor = EIWarping/l**3, series = True, symbol = a)
+print('w1 w1:')
+SimplifyPrint(torsionalStiffnessMatrixStableBasis[3, 3], factor = EIWarping/l**3, series = True, symbol = a)
 print('Axial mass matrix:')
 SimplifyPrint(axialMassMatrix, factor = l * linearDensity)
 print()
@@ -194,12 +210,12 @@ print('Bounded basis:')
 SimplifyPrint(massMatrixBoundedBasis, factor = rollMassInertiaMoment + linearDensity * (zCenterOfMass - zCenterOfTwist)**2)
 print('Stable basis:')
 print('Free warping submatrix:')
-freeWarpingSubmatrix: sym.Matrix = sym.zeros(2, 2)
-freeWarpingSubmatrix[0, 0] = massMatrixStableBasis[0, 0]
-freeWarpingSubmatrix[1, 0] = massMatrixStableBasis[2, 0]
-freeWarpingSubmatrix[0, 1] = massMatrixStableBasis[0, 2]
-freeWarpingSubmatrix[1, 1] = massMatrixStableBasis[2, 2]
-SimplifyPrint(freeWarpingSubmatrix, factor = rollMassInertiaMoment + linearDensity * (zCenterOfMass - zCenterOfTwist)**2)
+freeWarpingTorsionalMassMatrix: sym.Matrix = sym.zeros(2, 2)
+freeWarpingTorsionalMassMatrix[0, 0] = massMatrixStableBasis[0, 0]
+freeWarpingTorsionalMassMatrix[1, 0] = massMatrixStableBasis[2, 0]
+freeWarpingTorsionalMassMatrix[0, 1] = massMatrixStableBasis[0, 2]
+freeWarpingTorsionalMassMatrix[1, 1] = massMatrixStableBasis[2, 2]
+SimplifyPrint(freeWarpingTorsionalMassMatrix, factor = (rollMassInertiaMoment + linearDensity * (zCenterOfMass - zCenterOfTwist)**2) * l)
 print('w0 w0:')
 SimplifyPrint(massMatrixStableBasis[1, 1], factor = (rollMassInertiaMoment + linearDensity * (zCenterOfMass - zCenterOfTwist)**2) * l, series = True, symbol = a)
 print('w0 w1:')
@@ -223,7 +239,7 @@ freeWarpingCouplingSubmatrix = sym.zeros(4, 2)
 freeWarpingCouplingSubmatrix[:, 0] = horizontalBendingDispBasisTorsionStableBasisCouplingMassMatrix[:, 0]
 freeWarpingCouplingSubmatrix[:, 1] = horizontalBendingDispBasisTorsionStableBasisCouplingMassMatrix[:, 2]
 print('Free warping submatrix:')
-SimplifyPrint(freeWarpingCouplingSubmatrix, factor = linearDensity * (zCenterOfMass - zCenterOfTwist) / (1 + shearCorrectionFactorHorizontal) / 120)
+SimplifyPrint(freeWarpingCouplingSubmatrix, factor = linearDensity * l * (zCenterOfMass - zCenterOfTwist) / (1 + shearCorrectionFactorHorizontal) / 120)
 print('y0 w0')
 SimplifyPrint(horizontalBendingDispBasisTorsionStableBasisCouplingMassMatrix[0, 1], factor = linearDensity * l * (zCenterOfMass - zCenterOfTwist) / (1 + shearCorrectionFactorHorizontal), series = True, symbol = a)
 print('psi0 w0')
