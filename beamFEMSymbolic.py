@@ -13,9 +13,9 @@ linearDensity = sym.Symbol('lambda')
 zCenterOfMass = sym.Symbol('z_m')
 zNeutralAxis = sym.Symbol('z_n')
 zCenterOfTwist = sym.Symbol('z_t')
-verticalMassInertiaMoment = sym.Symbol('I_yy')
-horizontalMassInertiaMoment = sym.Symbol('I_zz')
-rollMassInertiaMoment = sym.Symbol('I_xx')
+verticalMassInertiaMoment = sym.Symbol('i_yy')
+horizontalMassInertiaMoment = sym.Symbol('i_zz')
+rollMassInertiaMoment = sym.Symbol('i_xx')
 
 x = sym.Symbol('x')
 
